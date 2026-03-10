@@ -165,10 +165,19 @@
         <div class="section-label">Composição atual</div>
         <div class="flex-between" style="margin-bottom:8px">
           <span id="comp-stats" class="text-muted text-small">0 candidatos</span>
-          <button class="btn btn-ghost btn-sm" style="color:var(--red)"
-                  onclick="if(confirm('Limpar tudo?')) { dados={}; resultado=null; renderComp(); agendarCalculo(); }">
-            ⊘ Limpar
-          </button>
+          <div style="display:flex;gap:6px;align-items:center">
+            <button class="btn btn-ghost btn-sm" style="color:var(--blue)" onclick="exportarCadastro()" title="Exportar cadastro de candidatos">
+              ⬇ Exportar
+            </button>
+            <label class="btn btn-ghost btn-sm" style="color:var(--green);cursor:pointer" title="Importar cadastro de candidatos">
+              ⬆ Importar
+              <input type="file" accept=".json" id="import-file" style="display:none" onchange="importarCadastro(event)">
+            </label>
+            <button class="btn btn-ghost btn-sm" style="color:var(--red)"
+                    onclick="if(confirm('Limpar tudo?')) { dados={}; resultado=null; renderComp(); agendarCalculo(); }">
+              ⊘ Limpar
+            </button>
+          </div>
         </div>
         <div style="overflow:auto; max-height:360px; border-radius:8px; border:1px solid var(--border)">
           <table class="comp-table" id="comp-table">
@@ -874,6 +883,53 @@ function exportarPDF() {
 // ─── Calcular ──────────────────────────────────────────────────────────────────
 // ─── Debounce — cálculo automático ───────────────────────────────────────────
 let _calcTimer = null;
+
+
+// ─── Exportar / Importar Cadastro ────────────────────────────────────────────
+function exportarCadastro() {
+  if (Object.keys(dados).length === 0) {
+    toast('Nenhum candidato para exportar!', 'erro');
+    return;
+  }
+  const nomeSim = document.getElementById('sim-nome').value.trim() || 'cadastro';
+  const payload = {
+    exportado_em: new Date().toISOString(),
+    simulacao: nomeSim,
+    dados_partidos: dados
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${nomeSim.replace(/\s+/g, '_')}_cadastro.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('Cadastro exportado com sucesso!', 'ok');
+}
+
+function importarCadastro(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const payload = JSON.parse(e.target.result);
+      if (!payload.dados_partidos) throw new Error('Arquivo inválido');
+      if (!confirm('Importar cadastro? Os dados atuais serão substituídos.')) {
+        event.target.value = '';
+        return;
+      }
+      dados = payload.dados_partidos;
+      renderComp();
+      agendarCalculo();
+      toast('Cadastro importado com sucesso!', 'ok');
+    } catch(err) {
+      toast('Erro ao importar: arquivo inválido!', 'erro');
+    }
+    event.target.value = '';
+  };
+  reader.readAsText(file);
+}
 
 let _saveTimer = null;
 function agendarCalculo() {
