@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Login — EleitOS{% endblock %}
+{% block content %}
+<div class="auth-card">
+  <div class="auth-logo">
+    <span class="logo-icon">⚡</span>
+    <h1>Eleit<span style="color:var(--blue)">OS</span></h1>
+    <p>Simulador Proporcional D'Hondt • Espírito Santo</p>
+  </div>
+
+  <form method="POST">
+    <div class="form-group">
+      <label class="form-label">E-mail</label>
+      <input type="email" name="email" class="form-control" placeholder="seu@email.com" required autofocus>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Senha</label>
+      <input type="password" name="senha" class="form-control" placeholder="••••••••" required>
+    </div>
+    <button type="submit" class="btn btn-primary btn-lg btn-block" style="margin-top:8px">
+      Entrar
+    </button>
+  </form>
+
+  <div class="auth-footer" style="margin-top:24px">
+    Não tem conta? <a href="{{ url_for('cadastro') }}">Cadastre-se grátis</a>
+  </div>
+</div>
+{% endblock %}

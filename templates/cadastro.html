@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Cadastro — EleitOS{% endblock %}
+{% block content %}
+<div class="auth-card">
+  <div class="auth-logo">
+    <span class="logo-icon">⚡</span>
+    <h1>Criar Conta</h1>
+    <p>EleitOS</p>
+  </div>
+
+  <form method="POST">
+    <div class="form-group">
+      <label class="form-label">Nome completo</label>
+      <input type="text" name="nome" class="form-control" placeholder="Seu nome" required autofocus>
+    </div>
+    <div class="form-group">
+      <label class="form-label">E-mail</label>
+      <input type="email" name="email" class="form-control" placeholder="seu@email.com" required>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Senha</label>
+      <input type="password" name="senha" class="form-control" placeholder="Mínimo 6 caracteres" required>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Confirmar senha</label>
+      <input type="password" name="confirmar" class="form-control" placeholder="Repita a senha" required>
+    </div>
+    <button type="submit" class="btn btn-success btn-lg btn-block" style="margin-top:8px">
+      Criar minha conta
+    </button>
+  </form>
+
+  <div class="auth-footer" style="margin-top:24px">
+    Já tem conta? <a href="{{ url_for('login') }}">Entrar</a>
+  </div>
+</div>
+{% endblock %}

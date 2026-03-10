@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Meu Perfil — EleitOS{% endblock %}
+{% block content %}
+<div style="max-width:520px;margin:0 auto">
+  <div class="dash-header">
+    <h1>Meu Perfil</h1>
+    <p>Atualize suas informações e senha</p>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;align-items:center;gap:16px;margin-bottom:28px;padding-bottom:20px;border-bottom:1px solid var(--border)">
+      <div style="width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,var(--blue),var(--purple));display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700">
+        {{ usuario.nome[0].upper() }}
+      </div>
+      <div>
+        <div style="font-size:17px;font-weight:700">{{ usuario.nome }}</div>
+        <div style="color:var(--text2);font-size:13px">{{ usuario.email }}</div>
+        <div style="margin-top:4px">
+          {% if usuario.papel == 'admin' %}
+          <span class="pill-admin">Administrador</span>
+          {% else %}
+          <span class="pill-user">Usuário</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <form method="POST">
+      <div class="form-group">
+        <label class="form-label">Nome</label>
+        <input type="text" name="nome" class="form-control" value="{{ usuario.nome }}" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Senha atual <span style="color:var(--red)">*</span></label>
+        <input type="password" name="senha_atual" class="form-control"
+               placeholder="Obrigatório para salvar" required>
+      </div>
+
+      <div style="margin:20px 0;padding:16px;background:var(--surface2);border-radius:10px;border:1px solid var(--border)">
+        <div style="font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px">
+          Alterar senha (opcional)
+        </div>
+        <div class="form-group">
+          <label class="form-label">Nova senha</label>
+          <input type="password" name="nova_senha" class="form-control"
+                 placeholder="Deixe em branco para não alterar">
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label">Confirmar nova senha</label>
+          <input type="password" name="confirmar" class="form-control" placeholder="Repita a nova senha">
+        </div>
+      </div>
+
+      <div style="display:flex;gap:10px">
+        <button type="submit" class="btn btn-success" style="flex:1">✓ Salvar alterações</button>
+        <a href="{{ url_for('dashboard') }}" class="btn btn-ghost">Cancelar</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>setTimeout(()=>document.querySelectorAll('.toast').forEach(t=>t.remove()), 4000);</script>
+{% endblock %}

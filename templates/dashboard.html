@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — EleitOS{% endblock %}
+{% block content %}
+<div class="dash-header flex-between">
+  <div>
+    <h1>Olá, {{ session.nome.split()[0] }} 👋</h1>
+    <p>Gerencie suas simulações eleitorais</p>
+  </div>
+  <a href="{{ url_for('nova_simulacao') }}" class="btn btn-primary btn-lg">
+    + Nova Simulação
+  </a>
+</div>
+
+<!-- Stats -->
+<div class="stats-grid">
+  <div class="stat-card stat-blue">
+    <div class="stat-value" style="color:var(--blue)">{{ simulacoes|length }}</div>
+    <div class="stat-label">Simulações salvas</div>
+  </div>
+  <div class="stat-card stat-green">
+    <div class="stat-value" style="color:var(--green)">
+      {{ simulacoes|selectattr('cargo','equalto','Deputado Federal')|list|length }}
+    </div>
+    <div class="stat-label">Dep. Federal</div>
+  </div>
+  <div class="stat-card stat-amber">
+    <div class="stat-value" style="color:var(--amber)">
+      {{ simulacoes|selectattr('cargo','equalto','Deputado Estadual')|list|length }}
+    </div>
+    <div class="stat-label">Dep. Estadual</div>
+  </div>
+  <div class="stat-card stat-purple">
+    <div class="stat-value" style="color:var(--purple)">
+      {{ simulacoes|selectattr('resultado_json')|list|length }}
+    </div>
+    <div class="stat-label">Com resultado calculado</div>
+  </div>
+</div>
+
+<!-- Simulações -->
+<div class="card">
+  <div class="card-header">
+    <h2 class="card-title">Minhas Simulações</h2>
+    <span class="text-muted text-small">{{ simulacoes|length }} simulação(ões)</span>
+  </div>
+
+  {% if simulacoes %}
+  <div class="sim-grid">
+    {% for s in simulacoes %}
+    <div class="sim-card" onclick="location.href='{{ url_for('editar_simulacao', sid=s.id) }}'">
+      <div class="sim-card-header">
+        <span class="sim-name">{{ s.nome }}</span>
+        <span class="sim-cargo {% if s.cargo == 'Deputado Estadual' %}estadual{% endif %}">
+          {{ 'Federal' if s.cargo == 'Deputado Federal' else 'Estadual' }}
+        </span>
+      </div>
+      <p class="sim-desc">{{ s.descricao or 'Sem descrição' }}</p>
+      <div class="sim-footer">
+        <span class="sim-date">
+          Atualizado {{ s.atualizado_em[:10] }}
+        </span>
+        <div class="sim-actions" onclick="event.stopPropagation()">
+          <a href="{{ url_for('editar_simulacao', sid=s.id) }}" class="btn btn-ghost btn-sm">
+            Abrir
+          </a>
+          <button class="btn btn-danger btn-sm"
+                  onclick="deletarSim({{ s.id }}, '{{ s.nome }}')">
+            Excluir
+          </button>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% else %}
+  <div class="empty-state">
+    <span class="empty-icon">🗳️</span>
+    <h3>Nenhuma simulação ainda</h3>
+    <p>Crie sua primeira simulação eleitoral para o Espírito Santo</p>
+    <a href="{{ url_for('nova_simulacao') }}" class="btn btn-primary" style="margin-top:16px">
+      + Criar Simulação
+    </a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function deletarSim(id, nome) {
+  if (!confirm(`Excluir a simulação "${nome}"? Esta ação não pode ser desfeita.`)) return;
+  fetch(`/api/simulacao/${id}`, { method: 'DELETE' })
+    .then(() => location.reload());
+}
+// Auto-fechar toasts
+setTimeout(() => document.querySelectorAll('.toast').forEach(t => t.remove()), 4000);
+</script>
+{% endblock %}

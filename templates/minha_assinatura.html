@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}Minha Assinatura — EleitOS{% endblock %}
+
+{% block content %}
+<div style="max-width:720px;margin:40px auto;padding:0 16px">
+
+  <h2 style="font-size:20px;font-weight:700;color:var(--text1);margin:0 0 24px">💳 Minha Assinatura</h2>
+
+  {% if assinatura %}
+  {% set is_ativa = assinatura.status == 'ativa' %}
+  {% set is_vitalicio = assinatura.plano == 'vitalicio' %}
+
+  {# Status card #}
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:24px;margin-bottom:20px">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+      <div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <span style="font-size:20px">{{ '⚡' if is_vitalicio else '📅' }}</span>
+          <span style="font-size:16px;font-weight:700;color:var(--text1)">
+            {{ 'Plano Vitalício' if is_vitalicio else 'Plano Mensal' }}
+          </span>
+          <span style="padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;
+            {% if is_ativa %}background:rgba(16,185,129,.15);color:#34D399
+            {% elif assinatura.status == 'cancelada' %}background:rgba(239,68,68,.15);color:#F87171
+            {% else %}background:rgba(245,158,11,.15);color:#FCD34D{% endif %}">
+            {{ assinatura.status | upper }}
+          </span>
+        </div>
+        {% if is_vitalicio %}
+        <p style="color:var(--text3);font-size:13px;margin:0">Acesso permanente — sem renovação necessária.</p>
+        {% elif is_ativa and assinatura.data_expiracao %}
+        <p style="color:var(--text3);font-size:13px;margin:0">
+          Próxima renovação: <strong style="color:var(--text2)">{{ assinatura.data_expiracao[:10] }}</strong>
+        </p>
+        {% elif assinatura.status == 'cancelada' %}
+        <p style="color:#F87171;font-size:13px;margin:0">Assinatura encerrada. Escolha um plano para reativar.</p>
+        {% endif %}
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:24px;font-weight:800;color:{{ 'var(--gold)' if is_vitalicio else '#60A5FA' }}">
+          R$ {{ '999,90' if is_vitalicio else '99,90/mês' }}
+        </div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px">
+          desde {{ assinatura.data_inicio[:10] if assinatura.data_inicio else '—' }}
+        </div>
+      </div>
+    </div>
+
+    {% if is_ativa and not is_vitalicio %}
+    <div style="margin-top:20px;padding-top:20px;border-top:1px solid var(--border)">
+      <form method="post" action="{{ url_for('cancelar_assinatura') }}"
+            onsubmit="return confirm('Tem certeza? Seu acesso continua até o fim do período pago.')">
+        <button type="submit" class="btn btn-ghost btn-sm"
+          style="border-color:rgba(239,68,68,.3);color:#F87171">
+          Cancelar assinatura
+        </button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+
+  {% else %}
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:40px;text-align:center;margin-bottom:20px">
+    <div style="font-size:40px;margin-bottom:12px">📭</div>
+    <p style="color:var(--text2);margin:0 0 20px">Você não possui nenhuma assinatura ativa.</p>
+    <a href="{{ url_for('planos') }}" class="btn btn-primary">Ver planos disponíveis</a>
+  </div>
+  {% endif %}
+
+  {# Histórico de pagamentos #}
+  {% if pagamentos %}
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden">
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border)">
+      <span style="font-size:14px;font-weight:600;color:var(--text1)">Histórico de Pagamentos</span>
+    </div>
+    <table style="width:100%;border-collapse:collapse">
+      <thead>
+        <tr style="background:var(--surface2)">
+          <th style="padding:10px 16px;text-align:left;font-size:11px;color:var(--text3);font-weight:600">DATA</th>
+          <th style="padding:10px 16px;text-align:left;font-size:11px;color:var(--text3);font-weight:600">PLANO</th>
+          <th style="padding:10px 16px;text-align:right;font-size:11px;color:var(--text3);font-weight:600">VALOR</th>
+          <th style="padding:10px 16px;text-align:center;font-size:11px;color:var(--text3);font-weight:600">STATUS</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in pagamentos %}
+        <tr style="border-top:1px solid var(--border)">
+          <td style="padding:10px 16px;font-size:13px;color:var(--text2)">{{ p.criado_em[:10] }}</td>
+          <td style="padding:10px 16px;font-size:13px;color:var(--text1)">
+            {{ 'Vitalício' if p.plano == 'vitalicio' else 'Mensal' }}
+          </td>
+          <td style="padding:10px 16px;font-size:13px;color:var(--text1);text-align:right">
+            R$ {{ '%.2f'|format(p.valor) | replace('.', ',') }}
+          </td>
+          <td style="padding:10px 16px;text-align:center">
+            <span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;
+              {% if p.status == 'approved' %}background:rgba(16,185,129,.15);color:#34D399
+              {% else %}background:rgba(239,68,68,.15);color:#F87171{% endif %}">
+              {{ 'APROVADO' if p.status == 'approved' else p.status | upper }}
+            </span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <div style="margin-top:16px">
+    <a href="{{ url_for('dashboard') }}" style="color:var(--text3);font-size:13px">← Voltar ao dashboard</a>
+  </div>
+
+</div>
+{% endblock %}

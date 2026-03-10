@@ -1,0 +1,1350 @@
+{% extends "base.html" %}
+{% block title %}
+  {% if simulacao %}{{ simulacao.nome }}{% else %}Nova Simulação{% endif %} — Simulador ES
+{% endblock %}
+
+{% block head %}
+<style>
+.sim-layout { height: calc(100vh - 56px - 56px); }
+</style>
+<!-- jsPDF — geração de relatório PDF client-side -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="{{ url_for('static', filename='js/relatorio_pdf.js') }}"></script>
+{% endblock %}
+
+{% block content %}
+<div class="sim-layout">
+
+  <!-- ─── PAINEL ESQUERDO ─────────────────────────────────── -->
+  <div class="sim-panel-left">
+    <div class="panel-header">
+      <span class="panel-title">⚙ Configuração</span>
+      <a href="{{ url_for('dashboard') }}" class="btn btn-ghost btn-sm">← Dashboard</a>
+    </div>
+
+    <div class="panel-body">
+
+      <!-- Config geral -->
+      <div class="form-section">
+        <div class="section-label">Eleição</div>
+        <div class="form-group">
+          <label class="form-label">Cargo</label>
+          <select id="cargo" class="form-control" onchange="atualizarTotais(); agendarCalculo()">
+            <option value="Deputado Federal">Deputado Federal — 10 vagas</option>
+            <option value="Deputado Estadual">Deputado Estadual — 30 vagas (ALES)</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Eleitores aptos</label>
+            <input type="number" id="eleitores" class="form-control" value="2921506"
+                   oninput="atualizarTotais(); agendarCalculo()">
+          </div>
+          <div class="form-group">
+            <label class="form-label" title="Não contam no QE">
+              Votos Brancos
+              <span style="color:var(--amber);font-size:9px;margin-left:4px">∉ QE</span>
+            </label>
+            <input type="number" id="brancos" class="form-control" value="0" min="0"
+                   oninput="atualizarTotais(); agendarCalculo()">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" title="Não contam no QE">
+              Votos Nulos
+              <span style="color:var(--amber);font-size:9px;margin-left:4px">∉ QE</span>
+            </label>
+            <input type="number" id="nulos" class="form-control" value="0" min="0"
+                   oninput="atualizarTotais(); agendarCalculo()">
+          </div>
+          <div class="form-group">
+            <label class="form-label" style="color:var(--text3)">% Sobre comparecimento</label>
+            <div id="pct-bn" style="padding:10px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--text2)">—</div>
+          </div>
+        </div>
+
+        <!-- Painel de totais dinâmico -->
+        <div id="painel-totais" style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-top:4px;margin-bottom:8px">
+          <div style="font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text3);margin-bottom:10px">
+            Apuração estimada
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px">
+            <div style="color:var(--text3)">Votos válidos <span style="color:var(--text3);font-size:10px">(entra no QE)</span></div>
+            <div id="tot-validos" style="text-align:right;color:var(--green);font-weight:600">—</div>
+            <div style="color:var(--text3)">Brancos + Nulos</div>
+            <div id="tot-bn" style="text-align:right;color:var(--amber);font-weight:600">—</div>
+            <div style="color:var(--text3)">Comparecimento total</div>
+            <div id="tot-comp" style="text-align:right;color:var(--text2);font-weight:600">—</div>
+            <div style="color:var(--text3)">Abstenção</div>
+            <div id="tot-abst" style="text-align:right;color:var(--red);font-weight:600">—</div>
+          </div>
+          <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border);font-size:11px;color:var(--text3)">
+            QE estimado ≈ <span id="qe-est" style="color:var(--gold);font-weight:700">—</span>
+            <span style="margin-left:6px;color:var(--text3)">(votos válidos ÷ vagas)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Adicionar partido -->
+      <div class="form-section">
+        <div class="section-label">Adicionar Partido</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Sigla</label>
+            <input type="text" id="np-sigla" class="form-control" placeholder="ex: PT"
+                   list="partidos-list" style="text-transform:uppercase">
+            <datalist id="partidos-list">
+              {% for p in ["PT","PL","UNIÃO","PP","MDB","PSD","REPUBLICANOS","PDT","PSDB","PSOL","PODE","PSB","AVANTE","SOLIDARIEDADE","PCdoB","PV","PROS","REDE","DC","NOVO","PMB","PRTB","PDT","PSC"] %}
+              <option value="{{ p }}">
+              {% endfor %}
+            </datalist>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Votos Legenda</label>
+            <input type="number" id="np-legenda" class="form-control" value="0" min="0">
+          </div>
+        </div>
+        <button class="btn btn-success btn-block" onclick="adicionarPartido()">+ Partido</button>
+      </div>
+
+      <!-- Adicionar candidato -->
+      <div class="form-section">
+        <div class="section-label">Adicionar Candidato</div>
+
+        <!-- Indicador de cota do partido selecionado -->
+        <div id="cota-indicator" style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:12px">
+          <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+            <span style="color:var(--text3);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.5px">Cota de Gênero — <span id="cota-sigla"></span></span>
+            <span id="cota-status-badge"></span>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span style="color:#60A5FA;font-size:11px">♂ <span id="cota-m">0</span></span>
+            <div style="flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+              <div id="cota-bar-m" style="height:100%;background:#3B82F6;border-radius:3px;transition:width .3s"></div>
+            </div>
+            <span style="color:#F472B6;font-size:11px">♀ <span id="cota-f">0</span></span>
+          </div>
+          <div style="margin-top:5px;font-size:10px" id="cota-msg"></div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Partido</label>
+            <select id="nc-partido" class="form-control" onchange="atualizarCotaIndicator()">
+              <option value="">— selecione —</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Sexo <span style="color:var(--red)">*</span>
+              <span id="cota-sexo-tip" style="display:none;font-size:9px;margin-left:4px;color:var(--red);font-weight:700;text-transform:none;letter-spacing:0"></span>
+            </label>
+            <div style="display:flex;gap:6px;margin-top:2px">
+              <button type="button" id="btn-m"
+                style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:9px;border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;transition:all .15s;background:var(--surface2);color:var(--text2);font-family:var(--font)"
+                onclick="setSexo('M')">♂ Masc</button>
+              <button type="button" id="btn-f"
+                style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:9px;border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;transition:all .15s;background:var(--surface2);color:var(--text2);font-family:var(--font)"
+                onclick="setSexo('F')">♀ Fem</button>
+            </div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Nome</label>
+          <input type="text" id="nc-nome" class="form-control" placeholder="Nome completo">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Votos estimados</label>
+          <input type="number" id="nc-votos" class="form-control" value="0" min="0">
+        </div>
+        <button id="btn-add-cand" class="btn btn-primary btn-block" onclick="adicionarCandidato()">+ Candidato</button>
+      </div>
+
+      <!-- Lista de composição -->
+      <div class="form-section">
+        <div class="section-label">Composição atual</div>
+        <div class="flex-between" style="margin-bottom:8px">
+          <span id="comp-stats" class="text-muted text-small">0 candidatos</span>
+          <button class="btn btn-ghost btn-sm" style="color:var(--red)"
+                  onclick="if(confirm('Limpar tudo?')) { dados={}; resultado=null; renderComp(); agendarCalculo(); }">
+            ⊘ Limpar
+          </button>
+        </div>
+        <div style="overflow:auto; max-height:360px; border-radius:8px; border:1px solid var(--border)">
+          <table class="comp-table" id="comp-table">
+            <thead>
+              <tr>
+                <th>Partido</th>
+                <th>Candidato</th>
+                <th style="text-align:center">Sexo</th>
+                <th style="text-align:right">Votos</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="comp-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div><!-- /panel-body -->
+
+    <!-- Barra de salvar -->
+    <div class="save-bar">
+      <input type="text" id="sim-nome" class="form-control" placeholder="Nome da simulação…">
+      <button class="btn btn-ghost btn-sm" onclick="salvar()" title="Salvar">💾</button>
+      <span class="save-status" id="save-status"></span>
+    </div>
+  </div>
+
+  <!-- ─── PAINEL DIREITO ──────────────────────────────────── -->
+  <div class="sim-panel-right">
+    <div class="panel-header">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="panel-title">📊 Resultado</span>
+        <span id="calc-status" style="font-size:11px;color:var(--text3);display:none">⏳ calculando…</span>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="btn-pdf" onclick="exportarPDF()"
+        title="Exportar relatório em PDF"
+        style="display:none;gap:6px;border-color:rgba(239,68,68,.4);color:#F87171;padding:7px 14px">
+        📄 Exportar PDF
+      </button>
+    </div>
+
+    <div class="tabs" id="tabs">
+      <button class="tab-btn active" onclick="showTab('resumo',this)">Resumo</button>
+      <button class="tab-btn" onclick="showTab('partidos',this)">Partidos</button>
+      <button class="tab-btn" onclick="showTab('eleitos',this)">Eleitos</button>
+      <button class="tab-btn" onclick="showTab('candidatos',this)">Candidatos</button>
+      <button class="tab-btn" onclick="showTab('por-partido',this)">Por Partido</button>
+      <button class="tab-btn" onclick="showTab('calculo',this)">Cálculo</button>
+      <div style="flex:1"></div>
+    </div>
+
+    <!-- Resumo -->
+    <div class="tab-content active" id="tab-resumo" style="overflow:auto">
+      <div id="resumo-vazio" style="text-align:center;padding:60px;color:var(--text3)">
+        <div style="font-size:48px;margin-bottom:16px">🗳️</div>
+        <p style="font-size:15px;font-weight:600;color:var(--text2)">Aguardando cálculo</p>
+        <p style="margin-top:6px">Configure partidos e candidatos, depois clique em Calcular</p>
+      </div>
+      <div id="resumo-dados" style="display:none">
+        <div class="kpi-row" id="kpis"></div>
+
+        <!-- Bloco: composição do comparecimento (brancos/nulos/válidos) -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;padding:0 16px">
+
+          <!-- Gráfico de barras empilhadas horizontal -->
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px">
+            <div style="font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text3);margin-bottom:12px">
+              Composição do Comparecimento
+            </div>
+            <div id="comp-bar-wrap" style="margin-bottom:10px">
+              <div style="height:22px;border-radius:6px;overflow:hidden;display:flex;width:100%" id="comp-stacked-bar"></div>
+              <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;font-size:11px" id="comp-legend"></div>
+            </div>
+          </div>
+
+          <!-- Percentuais em cards menores -->
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px">
+            <div style="font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text3);margin-bottom:12px">
+              Percentual sobre Comparecimento
+            </div>
+            <div id="pct-cards" style="display:flex;flex-direction:column;gap:8px"></div>
+          </div>
+        </div>
+
+        <div style="padding:0 16px 14px">
+          <div class="chart-wrap" style="margin-bottom:0">
+            <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px">Vagas por Partido</div>
+            <div class="bar-chart" id="bar-chart"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Partidos -->
+    <div class="tab-content" id="tab-partidos" style="overflow:auto;padding:0">
+      <table class="result-table" id="tbl-partidos">
+        <thead><tr>
+          <th>Partido</th><th>Votos</th><th>% Votos</th>
+          <th>≥ QE</th><th>≥ 80% QE</th>
+          <th>QP</th><th>Sobras</th><th>Total</th><th>Eleitos</th>
+        </tr></thead>
+        <tbody id="body-partidos"></tbody>
+      </table>
+    </div>
+
+    <!-- Eleitos -->
+    <div class="tab-content" id="tab-eleitos" style="overflow:auto;padding:0">
+      <!-- Painel de gênero dos eleitos -->
+      <div id="painel-genero" style="display:none;padding:14px 16px;background:var(--surface2);border-bottom:1px solid var(--border)">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:10px">
+          <div style="background:var(--surface);border-radius:8px;padding:12px;text-align:center">
+            <div id="gen-total-h" style="font-size:22px;font-weight:800;color:#60A5FA">—</div>
+            <div style="font-size:11px;color:var(--text3)">♂ Homens eleitos</div>
+          </div>
+          <div style="background:var(--surface);border-radius:8px;padding:12px;text-align:center">
+            <div id="gen-total-m" style="font-size:22px;font-weight:800;color:#F472B6">—</div>
+            <div style="font-size:11px;color:var(--text3)">♀ Mulheres eleitas</div>
+          </div>
+          <div id="gen-cota-card" style="background:var(--surface);border-radius:8px;padding:12px;text-align:center">
+            <div id="gen-pct-m" style="font-size:22px;font-weight:800;color:var(--text2)">—</div>
+            <div style="font-size:11px;color:var(--text3)">% mulheres eleitas</div>
+          </div>
+        </div>
+        <div id="gen-barra-wrap" style="margin-bottom:8px">
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-bottom:4px">
+            <span>♂ Homens</span><span>♀ Mulheres</span>
+          </div>
+          <div style="height:10px;background:var(--border);border-radius:5px;overflow:hidden;display:flex">
+            <div id="gen-bar-h" style="background:#3B82F6;transition:width .4s"></div>
+            <div id="gen-bar-m" style="background:#F472B6;transition:width .4s"></div>
+          </div>
+        </div>
+        <div id="gen-alerta-candidatura" style="display:none;padding:8px 12px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:8px;font-size:12px;color:var(--red);margin-top:6px"></div>
+      </div>
+      <table class="result-table" id="tbl-eleitos">
+        <thead><tr>
+          <th>#</th><th>Candidato</th><th>Partido</th>
+          <th>Sexo</th><th>Votos</th><th>Eleito por</th>
+        </tr></thead>
+        <tbody id="body-eleitos"></tbody>
+      </table>
+    </div>
+
+    <!-- Candidatos (tabela geral) -->
+    <div class="tab-content" id="tab-candidatos" style="overflow:auto;padding:0">
+      <table class="result-table">
+        <thead><tr>
+          <th>#</th><th>Candidato</th><th>Partido</th><th style="text-align:center">Sexo</th>
+          <th>Votos</th><th>Mín 10%</th><th>Status</th><th>Obs</th><th></th>
+        </tr></thead>
+        <tbody id="body-candidatos"></tbody>
+      </table>
+    </div>
+
+    <!-- Por Partido (nova aba) -->
+    <div class="tab-content" id="tab-por-partido" style="overflow:auto;padding:16px">
+      <div id="body-por-partido"></div>
+    </div>
+
+    <!-- Cálculo -->
+    <div class="tab-content" id="tab-calculo" style="overflow:auto">
+      <pre id="log-calculo" style="font-size:12px;color:var(--text2);line-height:1.7;font-family:'Courier New',monospace;white-space:pre-wrap"></pre>
+    </div>
+  </div>
+</div>
+
+<!-- Modal de edição -->
+<div id="modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;align-items:center;justify-content:center">
+  <div class="card" style="width:440px;max-width:95vw;box-shadow:var(--shadow-lg)">
+    <div class="card-header">
+      <h3 class="card-title" id="modal-title">Editar</h3>
+      <button class="btn btn-ghost btn-sm btn-icon" onclick="fecharModal()">✕</button>
+    </div>
+    <div id="modal-body"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ─── Totalizador dinâmico ────────────────────────────────────────────────────
+function atualizarTotais() {
+  const eleit  = parseInt(document.getElementById('eleitores').value) || 0;
+  const brancos = parseInt(document.getElementById('brancos').value)  || 0;
+  const nulos   = parseInt(document.getElementById('nulos').value)    || 0;
+  const cargo   = document.getElementById('cargo').value;
+  const vagas   = cargo === 'Deputado Federal' ? 10 : 30;
+
+  // Votos válidos = candidatos + legenda (ainda não digitados aqui)
+  // Mostramos com base no que já foi cadastrado em dados
+  const votosCands = Object.values(dados).reduce((s, d) =>
+    s + d.candidatos.reduce((ss, c) => ss + c.votos, 0) + d.votos_legenda, 0);
+
+  const validos    = votosCands;
+  const bn         = brancos + nulos;
+  const comp       = validos + bn;
+  const abst       = Math.max(0, eleit - comp);
+  const pct_bn     = comp > 0 ? ((bn / comp) * 100).toFixed(1) : '0.0';
+  const qe_est     = vagas > 0 && validos > 0 ? Math.round(validos / vagas) : 0;
+
+  document.getElementById('tot-validos').textContent = validos > 0 ? fmt(validos) : '(aguardando candidatos)';
+  document.getElementById('tot-bn').textContent      = fmt(bn);
+  document.getElementById('tot-comp').textContent    = fmt(comp);
+  document.getElementById('tot-abst').textContent    = fmt(abst) + (eleit > 0 ? ` (${((abst/eleit)*100).toFixed(1)}%)` : '');
+  document.getElementById('qe-est').textContent      = qe_est > 0 ? fmt(qe_est) : '—';
+  document.getElementById('pct-bn').textContent      = `${pct_bn}% do comparecimento`;
+
+  // Colorir abstenção
+  const pct_abst = eleit > 0 ? abst / eleit : 0;
+  document.getElementById('tot-abst').style.color =
+    pct_abst > 0.3 ? 'var(--red)' : pct_abst > 0.15 ? 'var(--amber)' : 'var(--text2)';
+}
+
+// ─── Estado ──────────────────────────────────────────────────────────────────
+let dados = {};          // { SIGLA: { candidatos:[{nome,votos}], votos_legenda:0 } }
+let resultado = null;
+let simId = {{ simulacao.id if simulacao else 'null' }};
+let editCtx = null;      // contexto de edição { sigla, idx, tipo }
+
+const PARTIDOS = ["PT","PL","UNIÃO","PP","MDB","PSD","REPUBLICANOS","PDT","PSDB","PSOL",
+                  "PODE","PSB","AVANTE","SOLIDARIEDADE","PCdoB","PV","PROS","REDE","DC",
+                  "NOVO","PMB","PRTB","PDT","PSC"];
+
+// ─── Carregar simulação salva ─────────────────────────────────────────────────
+{% if simulacao %}
+(async () => {
+  const r = await fetch('/api/simulacao/{{ simulacao.id }}');
+  const d = await r.json();
+  if (d.ok) {
+    dados = d.dados_partidos || {};
+    document.getElementById('cargo').value = d.cargo;
+    document.getElementById('eleitores').value = d.eleitores;
+    document.getElementById('brancos').value = d.votos_brancos;
+    document.getElementById('nulos').value = d.votos_nulos;
+    document.getElementById('sim-nome').value = d.nome;
+    if (d.resultado) { resultado = d.resultado; renderResultado(); document.getElementById('btn-pdf').style.display = 'flex'; }
+    renderComp();
+  }
+})();
+{% endif %}
+
+// ─── Composição ───────────────────────────────────────────────────────────────
+function adicionarPartido() {
+  const sigla = document.getElementById('np-sigla').value.trim().toUpperCase();
+  const legenda = parseInt(document.getElementById('np-legenda').value) || 0;
+  if (!sigla) return toast('Informe a sigla do partido.', 'erro');
+  if (dados[sigla]) return toast(`${sigla} já foi adicionado.`, 'erro');
+  dados[sigla] = { candidatos: [], votos_legenda: legenda };
+  document.getElementById('np-sigla').value = '';
+  document.getElementById('np-legenda').value = '0';
+  renderComp();
+  agendarCalculo();
+  toast(`Partido ${sigla} adicionado.`, 'ok');
+}
+
+// Sexo selecionado no formulário
+let sexoSelecionado = null;
+
+// Estiliza um botão de sexo conforme: selecionado, bloqueado ou neutro
+function _estilizaBtnSexo(btnEl, sexo, ativo, bloqueado) {
+  if (bloqueado) {
+    btnEl.disabled = true;
+    btnEl.style.cssText = `flex:1;display:flex;align-items:center;justify-content:center;gap:6px;
+      padding:9px;border:1px solid rgba(239,68,68,.3);border-radius:8px;
+      cursor:not-allowed;font-size:13px;font-weight:600;transition:all .15s;
+      background:rgba(239,68,68,.06);color:rgba(239,68,68,.4);font-family:var(--font);
+      opacity:0.5;`;
+  } else if (ativo) {
+    btnEl.disabled = false;
+    const isMas = sexo === 'M';
+    btnEl.style.cssText = `flex:1;display:flex;align-items:center;justify-content:center;gap:6px;
+      padding:9px;border:1px solid ${isMas?'var(--blue)':'#F472B6'};border-radius:8px;
+      cursor:pointer;font-size:13px;font-weight:700;transition:all .15s;
+      background:${isMas?'rgba(59,130,246,.2)':'rgba(244,114,182,.2)'};
+      color:${isMas?'var(--blue-l)':'#F472B6'};font-family:var(--font);`;
+  } else {
+    btnEl.disabled = false;
+    btnEl.style.cssText = `flex:1;display:flex;align-items:center;justify-content:center;gap:6px;
+      padding:9px;border:1px solid var(--border);border-radius:8px;
+      cursor:pointer;font-size:13px;font-weight:600;transition:all .15s;
+      background:var(--surface2);color:var(--text2);font-family:var(--font);`;
+  }
+}
+
+function setSexo(s) {
+  // Verifica se o botão está bloqueado antes de aceitar o clique
+  const btn = document.getElementById(s==='M'?'btn-m':'btn-f');
+  if (btn.disabled) return;
+  sexoSelecionado = s;
+  atualizarCotaIndicator();
+}
+
+function cotaStatus(partido, excluirIdx) {
+  // excluirIdx: ao editar, ignora o candidato atual para recalcular a cota
+  if (!partido || !dados[partido]) return null;
+  let cands = dados[partido].candidatos;
+  if (excluirIdx !== undefined) cands = cands.filter((_,i) => i !== excluirIdx);
+  const total = cands.length;
+  const nM = cands.filter(c => c.sexo === 'M').length;
+  const nF = cands.filter(c => c.sexo === 'F').length;
+  const pctM = total > 0 ? nM / total : 0;
+  const pctF = total > 0 ? nF / total : 0;
+  const violaM = total >= 3 && pctM > 0.70;
+  const violaF = total >= 3 && pctF > 0.70;
+  const alertaM = total >= 2 && pctM >= 0.65;
+  const alertaF = total >= 2 && pctF >= 0.65;
+  return { total, nM, nF, pctM, pctF, violaM, violaF, alertaM, alertaF };
+}
+
+// Retorna true se adicionar sexo=s faria ESSE sexo ultrapassar 70%
+// Só verifica o sexo que está sendo adicionado — o outro nunca extrapola.
+function cotaViolaAoAdicionar(partido, s, excluirIdx) {
+  const st = cotaStatus(partido, excluirIdx);
+  if (!st) return false;
+  const novoTotal = st.total + 1;
+  if (novoTotal < 3) return false;  // cota só vale a partir de 3 candidatos
+  const novoSexo = s === 'M' ? st.nM + 1 : st.nF + 1;
+  return (novoSexo / novoTotal) > 0.70;
+}
+
+function atualizarCotaIndicator(excluirIdx) {
+  const partido = document.getElementById('nc-partido').value;
+  const ind     = document.getElementById('cota-indicator');
+  const btnM    = document.getElementById('btn-m');
+  const btnF    = document.getElementById('btn-f');
+  const tip     = document.getElementById('cota-sexo-tip');
+  const btnAdd  = document.getElementById('btn-add-cand');
+
+  // Reset
+  _estilizaBtnSexo(btnM, 'M', sexoSelecionado==='M', false);
+  _estilizaBtnSexo(btnF, 'F', sexoSelecionado==='F', false);
+  tip.style.display = 'none';
+  tip.textContent = '';
+  if (btnAdd) { btnAdd.disabled = false; btnAdd.style.opacity = '1'; btnAdd.textContent = '+ Candidato'; }
+
+  if (!partido || !dados[partido]) { ind.style.display = 'none'; return; }
+
+  const st = cotaStatus(partido, excluirIdx);
+  const LIMITE_CANDS = 11; // Lei 9.504/97 Art. 10 — máx. 150% das vagas (10 vagas → 15, mas prática é 11 para federal)
+
+  ind.style.display = 'block';
+  document.getElementById('cota-sigla').textContent = partido;
+  document.getElementById('cota-m').textContent = st.nM;
+  document.getElementById('cota-f').textContent = st.nF;
+  const pctM_bar = st.total > 0 ? (st.nM / st.total * 100).toFixed(0) : 50;
+  document.getElementById('cota-bar-m').style.width = pctM_bar + '%';
+
+  const badge = document.getElementById('cota-status-badge');
+  const msg   = document.getElementById('cota-msg');
+
+  // ── Bloquear por limite de 11 candidatos ──────────────────────────────────
+  if (st.total >= LIMITE_CANDS) {
+    badge.innerHTML = '<span style="background:rgba(239,68,68,.2);color:#F87171;padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700">⛔ LIMITE</span>';
+    msg.innerHTML = `<span style="color:var(--red)">${st.total}/${LIMITE_CANDS} candidatos — limite legal atingido (Lei 9.504/97 Art. 10)</span>`;
+    _estilizaBtnSexo(btnM, 'M', false, true);
+    _estilizaBtnSexo(btnF, 'F', false, true);
+    sexoSelecionado = null;
+    tip.style.display = 'inline';
+    tip.textContent = `Limite de ${LIMITE_CANDS} candidatos atingido`;
+    if (btnAdd) { btnAdd.disabled = true; btnAdd.style.opacity = '0.35'; btnAdd.textContent = `⛔ Limite (${LIMITE_CANDS} cand.)`; }
+    return;
+  }
+
+  // ── Status de cota ─────────────────────────────────────────────────────────
+  const restam = LIMITE_CANDS - st.total;
+  if (st.violaM || st.violaF) {
+    badge.innerHTML = '<span style="background:rgba(239,68,68,.2);color:#F87171;padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700">⚠ VIOLA COTA</span>';
+    msg.innerHTML = `<span style="color:var(--red)">${st.violaM?(st.pctM*100).toFixed(0):((st.pctF)*100).toFixed(0)}% ${st.violaM?'masc':'fem'} — máx. 70% (Lei 9.504/97 Art. 10 §3º)</span>`;
+  } else if (st.alertaM || st.alertaF) {
+    badge.innerHTML = '<span style="background:rgba(245,158,11,.2);color:#FCD34D;padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700">⚡ ATENÇÃO</span>';
+    msg.innerHTML = `<span style="color:var(--amber)">♂ ${(st.pctM*100).toFixed(0)}%  ♀ ${(st.pctF*100).toFixed(0)}%  — próximo do limite de 70%</span>`;
+  } else {
+    const corRestam = restam <= 2 ? 'var(--amber)' : 'var(--text3)';
+    badge.innerHTML = '<span style="background:rgba(16,185,129,.15);color:#34D399;padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700">✓ COTA OK</span>';
+    msg.innerHTML = `<span style="color:var(--text3)">♂ ${(st.pctM*100).toFixed(0)}%  ♀ ${(st.pctF*100).toFixed(0)}%  — mín. 30%</span>
+      <span style="color:${corRestam};margin-left:8px">${restam} vaga${restam!==1?'s':''} restante${restam!==1?'s':''}</span>`;
+  }
+
+  // ── Bloquear o BOTÃO do sexo que violaria a cota ──────────────────────────
+  const bloqM = cotaViolaAoAdicionar(partido, 'M', excluirIdx);
+  const bloqF = cotaViolaAoAdicionar(partido, 'F', excluirIdx);
+  _estilizaBtnSexo(btnM, 'M', sexoSelecionado==='M', bloqM);
+  _estilizaBtnSexo(btnF, 'F', sexoSelecionado==='F', bloqF);
+
+  if (bloqM && sexoSelecionado === 'M') { sexoSelecionado = null; }
+  if (bloqF && sexoSelecionado === 'F') { sexoSelecionado = null; }
+
+  if (bloqM && !bloqF) {
+    tip.style.display = 'inline';
+    tip.textContent = '♂ bloqueado — cota 70% (Lei 9.504/97)';
+  } else if (bloqF && !bloqM) {
+    tip.style.display = 'inline';
+    tip.textContent = '♀ bloqueado — cota 70% (Lei 9.504/97)';
+  }
+
+  if (bloqM && bloqF && btnAdd) {
+    btnAdd.disabled = true;
+    btnAdd.style.opacity = '0.4';
+  }
+}
+
+function adicionarCandidato() {
+  const partido = document.getElementById('nc-partido').value;
+  const nome    = document.getElementById('nc-nome').value.trim();
+  const votos   = parseInt(document.getElementById('nc-votos').value) || 0;
+  const sexo    = sexoSelecionado;
+
+  if (!partido) return toast('Selecione o partido.', 'erro');
+  if (!nome)    return toast('Informe o nome do candidato.', 'erro');
+  if (!sexo)    return toast('Selecione o sexo do candidato.', 'erro');
+
+  // Guarda-chuva: limite de 11 candidatos por partido
+  if (dados[partido].candidatos.length >= 11)
+    return toast(`${partido} já tem 11 candidatos — limite legal (Lei 9.504/97 Art. 10).`, 'erro');
+
+  // Guarda-chuva: cota de gênero
+  if (cotaViolaAoAdicionar(partido, sexo)) return toast('Cota de gênero: selecione outro sexo.', 'erro');
+
+  dados[partido].candidatos.push({ nome, votos, sexo });
+  document.getElementById('nc-nome').value = '';
+  document.getElementById('nc-votos').value = '0';
+  atualizarCotaIndicator();
+  renderComp();
+  agendarCalculo();
+}
+
+function renderComp() {
+  const tbody = document.getElementById('comp-body');
+  const sel   = document.getElementById('nc-partido');
+  tbody.innerHTML = '';
+  sel.innerHTML = '<option value="">— selecione —</option>';
+
+  let totalC = 0, totalV = 0;
+  for (const [sigla, d] of Object.entries(dados).sort()) {
+    const totalP = d.candidatos.reduce((s,c)=>s+c.votos,0) + d.votos_legenda;
+    totalV += totalP; totalC += d.candidatos.length;
+
+    // Linha partido
+    const stP = cotaStatus(sigla);
+    let cotaInfo = '';
+    if (stP && stP.total > 0) {
+      const pM = (stP.pctM*100).toFixed(0), pF = (stP.pctF*100).toFixed(0);
+      const cor = (stP.violaM||stP.violaF) ? 'var(--red)' : (stP.alertaM||stP.alertaF) ? 'var(--amber)' : 'var(--text3)';
+      cotaInfo = ` <span style="color:${cor};font-size:10px">♂${pM}% ♀${pF}%</span>`;
+    }
+    tbody.insertAdjacentHTML('beforeend', `
+      <tr class="row-partido" data-sigla="${sigla}">
+        <td colspan="2">${sigla}${cotaInfo} <span style="color:var(--text3);font-weight:400;font-size:11px">${d.candidatos.length} cand.${d.votos_legenda?' • +'+d.votos_legenda.toLocaleString('pt-BR')+' leg.':''}</span></td>
+        <td style="text-align:center"></td>
+        <td style="text-align:right;color:var(--gold)">${totalP.toLocaleString('pt-BR')}</td>
+        <td>
+          <div class="actions-cell">
+            <button class="btn btn-ghost btn-sm btn-icon" title="Editar partido"
+                    onclick="abrirEditarPartido('${sigla}')">✏</button>
+            <button class="btn btn-sm" style="background:rgba(239,68,68,.1);color:var(--red);padding:4px 8px"
+                    onclick="excluirPartido('${sigla}')">✕</button>
+          </div>
+        </td>
+      </tr>`);
+
+    // Opção no select de candidato
+    sel.insertAdjacentHTML('beforeend', `<option value="${sigla}">${sigla}</option>`);
+
+    // Linhas candidatos
+    d.candidatos.forEach((cand, i) => {
+      const sexoLabel = cand.sexo === 'F'
+        ? '<span style="color:#F472B6;font-weight:600;font-size:11px">♀ Fem</span>'
+        : cand.sexo === 'M'
+          ? '<span style="color:#60A5FA;font-weight:600;font-size:11px">♂ Mas</span>'
+          : '<span style="color:var(--red);font-size:10px" title="Sexo não informado">?</span>';
+      tbody.insertAdjacentHTML('beforeend', `
+        <tr class="row-cand">
+          <td style="padding-left:20px;color:var(--text2);font-size:12px">${sigla}</td>
+          <td>${cand.nome}</td>
+          <td style="text-align:center">${sexoLabel}</td>
+          <td style="text-align:right;color:var(--text)">${cand.votos.toLocaleString('pt-BR')}</td>
+          <td>
+            <div class="actions-cell">
+              <button class="btn btn-ghost btn-sm btn-icon" title="Editar"
+                      onclick="abrirEditarCand('${sigla}',${i})">✏</button>
+              <button class="btn btn-sm" style="background:rgba(239,68,68,.1);color:var(--red);padding:4px 8px"
+                      onclick="excluirCand('${sigla}',${i})">✕</button>
+            </div>
+          </td>
+        </tr>`);
+    });
+  }
+  atualizarTotais();
+  document.getElementById('comp-stats').textContent =
+    `${totalC} candidatos  •  ${totalV.toLocaleString('pt-BR')} votos`;
+}
+
+function excluirPartido(sigla) {
+  if (!confirm(`Remover o partido ${sigla} e todos os seus candidatos?`)) return;
+  delete dados[sigla];
+  renderComp();
+}
+function excluirCand(sigla, idx) {
+  dados[sigla].candidatos.splice(idx, 1);
+  renderComp();
+  agendarCalculo();
+}
+
+// ─── Modal edição ──────────────────────────────────────────────────────────────
+function fecharModal() {
+  document.getElementById('modal-overlay').style.display = 'none';
+}
+document.getElementById('modal-overlay').addEventListener('click', e => {
+  if (e.target === e.currentTarget) fecharModal();
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') fecharModal(); });
+
+function abrirEditarCand(sigla, idx) {
+  const c = dados[sigla].candidatos[idx];
+  const opts = Object.keys(dados).sort().map(s =>
+    `<option value="${s}" ${s===sigla?'selected':''}>${s}</option>`).join('');
+
+  const sexoAtual = c.sexo || '';
+  // Pre-calcular bloqueios para o modal (excluindo o candidato atual do cômputo)
+  const stEdit = cotaStatus(sigla, idx);
+  const bloqM_edit = stEdit ? cotaViolaAoAdicionar(sigla, 'M', idx) : false;
+  const bloqF_edit = stEdit ? cotaViolaAoAdicionar(sigla, 'F', idx) : false;
+
+  const btnMstyle = (s) => bloqM_edit && s==='M'
+    ? `opacity:.35;cursor:not-allowed;background:rgba(239,68,68,.06);border-color:rgba(239,68,68,.2);color:rgba(239,68,68,.4)`
+    : s===sexoAtual && s==='M' ? `background:rgba(59,130,246,.2);border-color:var(--blue);color:var(--blue-l);font-weight:700`
+    : s===sexoAtual && s==='F' ? `background:rgba(244,114,182,.2);border-color:#F472B6;color:#F472B6;font-weight:700`
+    : ``;
+  const bloqTip = bloqM_edit
+    ? `<span style="font-size:10px;color:var(--red);margin-left:6px">♂ bloqueado — cota 70%</span>`
+    : bloqF_edit
+      ? `<span style="font-size:10px;color:var(--red);margin-left:6px">♀ bloqueado — cota 70%</span>`
+      : ``;
+
+  document.getElementById('modal-title').textContent = '✏ Editar Candidato';
+  document.getElementById('modal-body').innerHTML = `
+    <div style="padding:0 0 20px">
+      <div class="form-group">
+        <label class="form-label">Partido <span style="color:var(--amber);font-size:10px">Janela Partidária: pode trocar!</span></label>
+        <select id="edit-partido" class="form-control" onchange="recalcCotaModal('${sigla}',${idx})">${opts}</select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Nome</label>
+        <input type="text" id="edit-nome" class="form-control" value="${c.nome}" autofocus>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Sexo ${bloqTip}</label>
+        <div style="display:flex;gap:6px" id="edit-sexo-wrap">
+          <button type="button" id="edit-btn-m"
+            style="flex:1;padding:9px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-weight:600;font-family:var(--font);transition:all .15s;background:var(--surface2);color:var(--text2);${bloqM_edit?'opacity:.35;cursor:not-allowed;background:rgba(239,68,68,.06);border-color:rgba(239,68,68,.2);color:rgba(239,68,68,.4)':''}"
+            onclick="selecionarSexoEdit('M','${sigla}',${idx})" ${bloqM_edit?'disabled':''}>♂ Masculino</button>
+          <button type="button" id="edit-btn-f"
+            style="flex:1;padding:9px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-weight:600;font-family:var(--font);transition:all .15s;background:var(--surface2);color:var(--text2);${bloqF_edit?'opacity:.35;cursor:not-allowed;background:rgba(239,68,68,.06);border-color:rgba(239,68,68,.2);color:rgba(239,68,68,.4)':''}"
+            onclick="selecionarSexoEdit('F','${sigla}',${idx})" ${bloqF_edit?'disabled':''}>♀ Feminino</button>
+        </div>
+        <input type="hidden" id="edit-sexo" value="${sexoAtual}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Votos estimados</label>
+        <input type="number" id="edit-votos" class="form-control" value="${c.votos}">
+      </div>
+      <div style="display:flex;gap:10px;margin-top:4px">
+        <button class="btn btn-success" style="flex:1" onclick="salvarEditCand('${sigla}',${idx})">✓ Salvar</button>
+        <button class="btn btn-ghost" onclick="fecharModal()">Cancelar</button>
+      </div>
+    </div>`;
+  // Aplicar estilo ao sexo atual selecionado
+  setTimeout(() => selecionarSexoEdit(sexoAtual, sigla, idx, true), 10);
+  document.getElementById('modal-overlay').style.display = 'flex';
+  setTimeout(() => document.getElementById('edit-nome').focus(), 50);
+}
+
+// Seleciona sexo no modal de edição e aplica estilo
+function selecionarSexoEdit(s, siglaOrig, idxOrig, somenteEstilo) {
+  const btnM = document.getElementById('edit-btn-m');
+  const btnF = document.getElementById('edit-btn-f');
+  const inp  = document.getElementById('edit-sexo');
+  if (!btnM || !btnF) return;
+
+  if (!somenteEstilo) {
+    const partido = document.getElementById('edit-partido').value;
+    if (cotaViolaAoAdicionar(partido, s, idxOrig)) return; // guarda-chuva
+    inp.value = s;
+  }
+
+  const atual = inp ? inp.value : s;
+  // Estilo botão M
+  if (!btnM.disabled) {
+    btnM.style.background  = atual==='M' ? 'rgba(59,130,246,.2)'  : 'var(--surface2)';
+    btnM.style.borderColor = atual==='M' ? 'var(--blue)'           : 'var(--border)';
+    btnM.style.color       = atual==='M' ? 'var(--blue-l)'         : 'var(--text2)';
+    btnM.style.fontWeight  = atual==='M' ? '700' : '600';
+  }
+  // Estilo botão F
+  if (!btnF.disabled) {
+    btnF.style.background  = atual==='F' ? 'rgba(244,114,182,.2)' : 'var(--surface2)';
+    btnF.style.borderColor = atual==='F' ? '#F472B6'              : 'var(--border)';
+    btnF.style.color       = atual==='F' ? '#F472B6'              : 'var(--text2)';
+    btnF.style.fontWeight  = atual==='F' ? '700' : '600';
+  }
+}
+
+// Recalcula bloqueios do modal quando partido muda (janela partidária)
+function recalcCotaModal(siglaOrig, idxOrig) {
+  const partido = document.getElementById('edit-partido').value;
+  const btnM = document.getElementById('edit-btn-m');
+  const btnF = document.getElementById('edit-btn-f');
+  if (!btnM || !btnF) return;
+  const exc = partido === siglaOrig ? idxOrig : undefined;
+  const bloqM = cotaViolaAoAdicionar(partido, 'M', exc);
+  const bloqF = cotaViolaAoAdicionar(partido, 'F', exc);
+  _aplicarBloqueioModalBtn(btnM, bloqM, 'M');
+  _aplicarBloqueioModalBtn(btnF, bloqF, 'F');
+}
+function _aplicarBloqueioModalBtn(btn, bloq, sexo) {
+  btn.disabled = bloq;
+  if (bloq) {
+    btn.style.opacity = '.35'; btn.style.cursor = 'not-allowed';
+    btn.style.background = 'rgba(239,68,68,.06)';
+    btn.style.borderColor = 'rgba(239,68,68,.2)';
+    btn.style.color = 'rgba(239,68,68,.4)';
+  } else {
+    const sel = document.getElementById('edit-sexo')?.value;
+    btn.style.opacity = '1'; btn.style.cursor = 'pointer';
+    btn.style.background  = sel===sexo ? (sexo==='M'?'rgba(59,130,246,.2)':'rgba(244,114,182,.2)') : 'var(--surface2)';
+    btn.style.borderColor = sel===sexo ? (sexo==='M'?'var(--blue)':'#F472B6') : 'var(--border)';
+    btn.style.color       = sel===sexo ? (sexo==='M'?'var(--blue-l)':'#F472B6') : 'var(--text2)';
+  }
+}
+
+function salvarEditCand(siglaOrig, idx) {
+  const novoPartido = document.getElementById('edit-partido').value;
+  const novoNome    = document.getElementById('edit-nome').value.trim();
+  const novosVotos  = parseInt(document.getElementById('edit-votos').value) || 0;
+  const novoSexo    = document.getElementById('edit-sexo').value;
+  if (!novoNome)   return toast('Nome não pode ser vazio.', 'erro');
+  if (!novoSexo)   return toast('Selecione o sexo.', 'erro');
+  if (!dados[novoPartido]) return toast('Partido não encontrado.', 'erro');
+  // Guarda-chuva de cota ao salvar edição
+  const exc = novoPartido === siglaOrig ? idx : undefined;
+  if (cotaViolaAoAdicionar(novoPartido, novoSexo, exc))
+    return toast('Cota de gênero: selecione outro sexo (Lei 9.504/97 Art. 10 §3º).', 'erro');
+
+  const cand = { nome: novoNome, votos: novosVotos, sexo: novoSexo };
+  if (novoPartido !== siglaOrig) {
+    dados[siglaOrig].candidatos.splice(idx, 1);
+    dados[novoPartido].candidatos.push(cand);
+  } else {
+    dados[siglaOrig].candidatos[idx] = cand;
+  }
+  renderComp();
+  fecharModal();
+  agendarCalculo();
+  toast('Candidato atualizado.', 'ok');
+}
+
+function abrirEditarPartido(sigla) {
+  const d = dados[sigla];
+  document.getElementById('modal-title').textContent = `≡ Editar Partido: ${sigla}`;
+  document.getElementById('modal-body').innerHTML = `
+    <div style="padding:0 0 20px">
+      <div class="form-group">
+        <label class="form-label">Nova Sigla <span style="color:var(--amber);font-size:10px">Janela Partidária</span></label>
+        <input type="text" id="edit-sigla" class="form-control" value="${sigla}"
+               style="text-transform:uppercase" autofocus>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Votos de Legenda</label>
+        <input type="number" id="edit-legenda" class="form-control" value="${d.votos_legenda}">
+      </div>
+      <div style="display:flex;gap:10px;margin-top:4px">
+        <button class="btn btn-success" style="flex:1" onclick="salvarEditPartido('${sigla}')">✓ Salvar</button>
+        <button class="btn btn-ghost" onclick="fecharModal()">Cancelar</button>
+      </div>
+    </div>`;
+  document.getElementById('modal-overlay').style.display = 'flex';
+  setTimeout(() => document.getElementById('edit-sigla').focus(), 50);
+}
+
+function salvarEditPartido(siglaOrig) {
+  const novaSigla  = document.getElementById('edit-sigla').value.trim().toUpperCase();
+  const novaLeg    = parseInt(document.getElementById('edit-legenda').value) || 0;
+  if (!novaSigla) return toast('Sigla não pode ser vazia.', 'erro');
+  if (novaSigla !== siglaOrig && dados[novaSigla]) return toast(`${novaSigla} já existe.`, 'erro');
+  if (novaSigla !== siglaOrig) {
+    dados[novaSigla] = { ...dados[siglaOrig] };
+    delete dados[siglaOrig];
+  }
+  dados[novaSigla].votos_legenda = novaLeg;
+  renderComp();
+  fecharModal();
+  agendarCalculo();
+  toast('Partido atualizado.', 'ok');
+}
+
+// ─── Exportar PDF ─────────────────────────────────────────────────────────────
+function exportarPDF() {
+  const nome  = document.getElementById('sim-nome').value.trim() || 'Simulação Eleitoral';
+  const cargo = document.getElementById('cargo').value || 'Deputado Federal';
+  gerarRelatorioPDF(resultado, nome, cargo);
+}
+
+// ─── Calcular ──────────────────────────────────────────────────────────────────
+// ─── Debounce — cálculo automático ───────────────────────────────────────────
+let _calcTimer = null;
+
+function agendarCalculo() {
+  clearTimeout(_calcTimer);
+  if (Object.keys(dados).length === 0) return;
+  const status = document.getElementById('calc-status');
+  if (status) { status.style.display = 'inline'; status.textContent = '⏳ calculando…'; }
+  _calcTimer = setTimeout(calcular, 800);
+}
+
+async function calcular() {
+  if (Object.keys(dados).length === 0) return;
+  const payload = {
+    cargo:        document.getElementById('cargo').value,
+    eleitores:    parseInt(document.getElementById('eleitores').value) || 2921506,
+    votos_brancos:parseInt(document.getElementById('brancos').value) || 0,
+    votos_nulos:  parseInt(document.getElementById('nulos').value) || 0,
+    dados_partidos: dados
+  };
+  try {
+    const r = await fetch('/api/calcular', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const d = await r.json();
+    if (d.ok) {
+      resultado = d.resultado;
+      renderResultado();
+      document.getElementById('btn-pdf').style.display = 'flex';
+      const status = document.getElementById('calc-status');
+      if (status) { status.style.display = 'inline'; status.textContent = '✓ atualizado'; setTimeout(()=>{ status.style.display='none'; }, 2000); }
+    }
+  } catch(e) {
+    const status = document.getElementById('calc-status');
+    if (status) { status.textContent = '⚠ erro ao calcular'; }
+  }
+}
+
+// ─── Renderizar resultado ─────────────────────────────────────────────────────
+function fmt(n) { return Number(n).toLocaleString('pt-BR'); }
+
+function renderResultado() {
+  if (!resultado) return;
+  const r = resultado;
+  document.getElementById('resumo-vazio').style.display = 'none';
+  document.getElementById('resumo-dados').style.display = 'block';
+
+  // KPIs — linha 1
+  const kpis = [
+    { v: fmt(r.qe),            l: 'Quociente Eleitoral', cls:'kpi-gold'  },
+    { v: fmt(r.total_validos), l: 'Votos Válidos',        cls:'kpi-blue'  },
+    { v: r.total_eleitos,      l: 'Eleitos',              cls:'kpi-green' },
+    { v: r.partidos.filter(p=>p.atingiu_qe).length, l:'Partidos c/ QE', cls:'kpi-amber' },
+    { v: fmt(r.comparecimento),l: 'Comparecimento',       cls:'kpi-blue'  },
+    { v: ((r.abstencao/(r.eleitores||1))*100).toFixed(1)+'%', l:'Abstenção', cls:'kpi-red' },
+  ];
+  document.getElementById('kpis').innerHTML = kpis.map(k => `
+    <div class="kpi-card ${k.cls}">
+      <div class="kpi-val">${k.v}</div>
+      <div class="kpi-lbl">${k.l}</div>
+    </div>`).join('');
+
+  // Gráfico empilhado de composição do comparecimento
+  const comp   = r.comparecimento || 1;
+  const pctV   = ((r.total_validos / comp) * 100).toFixed(1);
+  const pctB   = ((r.total_brancos  / comp) * 100).toFixed(1);
+  const pctN   = ((r.total_nulos    / comp) * 100).toFixed(1);
+  const pctAbs = r.eleitores > 0 ? ((r.abstencao / r.eleitores) * 100).toFixed(1) : '0.0';
+
+  document.getElementById('comp-stacked-bar').innerHTML = `
+    <div style="flex:${pctV};background:#3B82F6;min-width:${pctV>0?'4px':'0'}"
+         title="Válidos: ${pctV}%"></div>
+    <div style="flex:${pctB};background:#F59E0B;min-width:${pctB>0?'4px':'0'}"
+         title="Brancos: ${pctB}%"></div>
+    <div style="flex:${pctN};background:#EF4444;min-width:${pctN>0?'4px':'0'}"
+         title="Nulos: ${pctN}%"></div>`;
+
+  document.getElementById('comp-legend').innerHTML = `
+    <span style="display:flex;align-items:center;gap:4px">
+      <span style="width:10px;height:10px;background:#3B82F6;border-radius:2px;display:inline-block"></span>
+      Válidos ${pctV}%
+    </span>
+    <span style="display:flex;align-items:center;gap:4px">
+      <span style="width:10px;height:10px;background:#F59E0B;border-radius:2px;display:inline-block"></span>
+      Brancos ${pctB}%
+    </span>
+    <span style="display:flex;align-items:center;gap:4px">
+      <span style="width:10px;height:10px;background:#EF4444;border-radius:2px;display:inline-block"></span>
+      Nulos ${pctN}%
+    </span>`;
+
+  // Cards de percentual
+  const pctRows = [
+    { l:'✅ Votos válidos',  v: fmt(r.total_validos),  p: pctV+'%',   cor:'var(--blue)' },
+    { l:'⬜ Votos brancos',  v: fmt(r.total_brancos),  p: pctB+'%',   cor:'var(--amber)'},
+    { l:'✖ Votos nulos',    v: fmt(r.total_nulos),    p: pctN+'%',   cor:'var(--red)'  },
+    { l:'🚫 Abstenção',     v: fmt(r.abstencao),       p: pctAbs+'%', cor:'#94A3B8'     },
+  ];
+  document.getElementById('pct-cards').innerHTML = pctRows.map(row => `
+    <div style="display:flex;align-items:center;justify-content:space-between;
+                padding:6px 10px;background:var(--surface);border-radius:7px">
+      <span style="font-size:12px;color:var(--text2)">${row.l}</span>
+      <div style="text-align:right">
+        <span style="font-size:13px;font-weight:700;color:${row.cor}">${row.p}</span>
+        <span style="font-size:11px;color:var(--text3);margin-left:6px">${row.v}</span>
+      </div>
+    </div>`).join('');
+
+  // Barras
+  const pv = r.partidos.filter(p=>p.vagas_total>0).sort((a,b)=>b.vagas_total-a.vagas_total);
+  const mx = Math.max(...pv.map(p=>p.vagas_total), 1);
+  const cores = ['#3B82F6','#10B981','#F59E0B','#8B5CF6','#EF4444','#14B8A6','#F97316','#EC4899','#84CC16','#06B6D4'];
+  document.getElementById('bar-chart').innerHTML = pv.map((p,i) => {
+    const pct = (p.vagas_total/mx)*100;
+    const qpH  = (p.vagas_qp/p.vagas_total)*pct;
+    const sobH = pct - qpH;
+    const cor  = cores[i%cores.length];
+    return `<div class="bar-group">
+      <div class="bar-val">${p.vagas_total}</div>
+      <div style="width:100%;display:flex;flex-direction:column;align-items:stretch;height:${pct.toFixed(1)}%">
+        <div style="background:${cor}55;flex:${sobH}" title="Sobras: ${p.vagas_sobra}"></div>
+        <div style="background:${cor};flex:${qpH};border-radius:4px 4px 0 0" title="QP: ${p.vagas_qp}"></div>
+      </div>
+      <div class="bar-label">${p.sigla}</div>
+    </div>`;
+  }).join('');
+
+  // Tabela partidos
+  const tvP = r.total_validos;
+  document.getElementById('body-partidos').innerHTML = r.partidos
+    .sort((a,b)=>b.total_votos-a.total_votos)
+    .map(p => {
+      const el = r.candidatos.filter(c=>c.partido===p.sigla&&c.status==='ELEITO');
+      const nms = el.slice(0,3).map(c=>c.nome.split(' ')[0]).join(', ')+(el.length>3?'…':'');
+      const rowCls = p.atingiu_qe ? 'style="background:rgba(16,185,129,.04)"'
+                   : p.atingiu_80_qe ? 'style="background:rgba(245,158,11,.04)"' : '';
+      return `<tr ${rowCls}>
+        <td><span class="badge badge-partido">${p.sigla}</span></td>
+        <td>${fmt(p.total_votos)}</td>
+        <td>${((p.total_votos/tvP)*100).toFixed(1)}%</td>
+        <td><span class="badge ${p.atingiu_qe?'badge-qe':'badge-noqe'}">${p.atingiu_qe?'✓ Sim':'✗ Não'}</span></td>
+        <td><span class="badge ${p.atingiu_80_qe?'badge-qe':'badge-noqe'}">${p.atingiu_80_qe?'✓ Sim':'✗ Não'}</span></td>
+        <td style="text-align:center"><b>${p.vagas_qp}</b></td>
+        <td style="text-align:center">${p.vagas_sobra}</td>
+        <td style="text-align:center"><b style="color:var(--gold)">${p.vagas_total}</b></td>
+        <td style="color:var(--text2);font-size:12px">${nms||'—'}</td>
+      </tr>`;
+    }).join('');
+
+  // Eleitos
+  const eleitos = r.candidatos.filter(c=>c.status==='ELEITO').sort((a,b)=>b.votos-a.votos);
+  document.getElementById('body-eleitos').innerHTML = eleitos.map((c,i) => {
+    const sexoEl = c.sexo==='F'
+      ? '<span style="color:#F472B6;font-weight:600">♀ Fem</span>'
+      : c.sexo==='M'
+        ? '<span style="color:#60A5FA;font-weight:600">♂ Mas</span>'
+        : '<span style="color:var(--text3)">—</span>';
+    return `<tr>
+      <td style="color:var(--text3)">${i+1}</td>
+      <td><b>${c.nome}</b></td>
+      <td><span class="badge badge-partido">${c.partido}</span></td>
+      <td style="text-align:center">${sexoEl}</td>
+      <td>${fmt(c.votos)}</td>
+      <td><span class="badge ${c.eleito_por==='QP'?'badge-eleito':'badge-sobra'}">${c.eleito_por}</span></td>
+    </tr>`;
+  }).join('');
+
+  // Painel de gênero dos eleitos
+  const nH = eleitos.filter(c=>c.sexo==='M').length;
+  const nM = eleitos.filter(c=>c.sexo==='F').length;
+  const tot = eleitos.length;
+  const pctM = tot > 0 ? ((nM/tot)*100).toFixed(1) : 0;
+  const pctH = tot > 0 ? ((nH/tot)*100).toFixed(1) : 0;
+  document.getElementById('painel-genero').style.display = 'block';
+  document.getElementById('gen-total-h').textContent = nH;
+  document.getElementById('gen-total-m').textContent = nM;
+  document.getElementById('gen-pct-m').textContent = pctM + '%';
+  document.getElementById('gen-bar-h').style.width = pctH + '%';
+  document.getElementById('gen-bar-m').style.width = pctM + '%';
+
+  // Cor do card de % mulheres eleitas
+  const card = document.getElementById('gen-cota-card');
+  const lbl  = document.getElementById('gen-pct-m');
+  if (parseFloat(pctM) >= 30) {
+    lbl.style.color = 'var(--green)';
+    card.style.borderLeft = '3px solid var(--green)';
+  } else {
+    lbl.style.color = 'var(--red)';
+    card.style.borderLeft = '3px solid var(--red)';
+  }
+
+  // Alertas de cota de candidatura por partido
+  const alertas = [];
+  r.partidos.forEach(p => {
+    const cands = r.candidatos.filter(c=>c.partido===p.sigla);
+    const totP  = cands.length;
+    if (totP < 3) return;
+    const mP = cands.filter(c=>c.sexo==='M').length;
+    const fP = cands.filter(c=>c.sexo==='F').length;
+    if (mP/totP > 0.70)
+      alertas.push(`<b>${p.sigla}</b>: ${((mP/totP)*100).toFixed(0)}% masculino — viola cota mínima de 30% feminino`);
+    if (fP/totP > 0.70)
+      alertas.push(`<b>${p.sigla}</b>: ${((fP/totP)*100).toFixed(0)}% feminino — viola cota mínima de 30% masculino`);
+  });
+  const alertaDiv = document.getElementById('gen-alerta-candidatura');
+  if (alertas.length > 0) {
+    alertaDiv.style.display = 'block';
+    alertaDiv.innerHTML = '⚠ Violação de cota de candidatura (Lei 9.504/97 Art. 10 §3º):<br>' + alertas.join('<br>');
+  } else {
+    alertaDiv.style.display = 'none';
+  }
+
+  // Todos candidatos (com botão de edição inline)
+  const mini = r.minimo_individual;
+  // Montar índice nome+partido → idx no array dados para permitir edição
+  // Tenta por nome exato; fallback por votos; fallback por posição no array
+  const _findIdx = (nome, partido, votos, posicao) => {
+    if (!dados[partido]) return -1;
+    const cands = dados[partido].candidatos;
+    let idx = cands.findIndex(x => x.nome === nome);
+    if (idx >= 0) return idx;
+    // fallback: mesmo votos
+    idx = cands.findIndex(x => x.votos === votos);
+    if (idx >= 0) return idx;
+    // fallback: posição (1-based → 0-based), apenas se dentro do range
+    const pos0 = (posicao || 1) - 1;
+    return pos0 < cands.length ? pos0 : -1;
+  };
+  document.getElementById('body-candidatos').innerHTML = r.candidatos
+    .sort((a,b)=>a.partido.localeCompare(b.partido)||b.votos-a.votos)
+    .map((c,i) => {
+      let obs = '';
+      if (c.status==='NÃO ELEITO') {
+        const p = r.partidos.find(p=>p.sigla===c.partido);
+        if (p&&!p.atingiu_qe) obs='Partido sem QE';
+        else if (c.votos<mini) obs=`< 10% QE (mín ${fmt(mini)})`;
+        else obs='Sem vagas no partido';
+      } else if (c.status==='SUPLENTE') obs=`Suplente #${c.posicao}`;
+      const badgeCls = c.status==='ELEITO'&&c.eleito_por==='QP' ? 'badge-eleito'
+                     : c.status==='ELEITO' ? 'badge-sobra'
+                     : c.status==='SUPLENTE' ? 'badge-suplente' : 'badge-nao';
+      const sexoEl = c.sexo==='F'
+        ? '<span style="color:#F472B6;font-weight:600">♀ Fem</span>'
+        : c.sexo==='M' ? '<span style="color:#60A5FA;font-weight:600">♂ Mas</span>'
+        : '<span style="color:var(--red);font-size:11px" title="Sexo não informado">? N/D</span>';
+      const cidxDados = _findIdx(c.nome, c.partido, c.votos, c.posicao);
+      const btnEditar = cidxDados >= 0
+        ? `<button class="btn btn-ghost btn-sm btn-icon" title="Editar ${c.nome}"
+             style="opacity:.8" onclick="abrirEditarCand('${c.partido}',${cidxDados});event.stopPropagation()">✏</button>`
+        : `<button class="btn btn-ghost btn-sm btn-icon" title="Candidato não encontrado em dados"
+             style="opacity:.25;cursor:default">✏</button>`;
+      return `<tr style="cursor:default">
+        <td style="color:var(--text3)">${c.posicao}</td>
+        <td>${c.nome}</td>
+        <td><span class="badge badge-partido">${c.partido}</span></td>
+        <td style="text-align:center">${sexoEl}</td>
+        <td>${fmt(c.votos)}</td>
+        <td style="color:var(--text3)">${fmt(mini)}</td>
+        <td><span class="badge ${badgeCls}">${c.status}</span></td>
+        <td style="color:var(--text3);font-size:12px">${obs}</td>
+        <td>${btnEditar}</td>
+      </tr>`;
+    }).join('');
+
+  // ══════════════════════════════════════════════════════════════
+  // ABA POR PARTIDO — candidatos agrupados com indicadores de gênero
+  // ══════════════════════════════════════════════════════════════
+  const partidosOrdenados = [...r.partidos].sort((a,b) => b.vagas_total - a.vagas_total || b.total_votos - a.total_votos);
+  const coresPart = ['#3B82F6','#10B981','#F59E0B','#8B5CF6','#EF4444','#14B8A6','#F97316','#EC4899','#84CC16','#06B6D4'];
+
+  document.getElementById('body-por-partido').innerHTML = partidosOrdenados.map((p, pi) => {
+    const cands = r.candidatos
+      .filter(cd => cd.partido === p.sigla)
+      .sort((a,b) => b.votos - a.votos);
+
+    const nM   = cands.filter(cd => cd.sexo==='M').length;
+    const nF   = cands.filter(cd => cd.sexo==='F').length;
+    const tot  = cands.length;
+    const pctF = tot > 0 ? ((nF/tot)*100).toFixed(0) : 0;
+    const pctM = tot > 0 ? ((nM/tot)*100).toFixed(0) : 0;
+    const cor  = coresPart[pi % coresPart.length];
+
+    // Cota status
+    const cotaViol  = tot >= 3 && (nM/tot > 0.70 || nF/tot > 0.70);
+    const cotaBadge = cotaViol
+      ? `<span style="background:rgba(239,68,68,.2);color:#F87171;padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;margin-left:6px">⚠ VIOLA COTA</span>`
+      : tot >= 3
+        ? `<span style="background:rgba(16,185,129,.12);color:#34D399;padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;margin-left:6px">✓ COTA OK</span>`
+        : '';
+
+    const statusCards = [
+      { label:'Vagas totais', val: p.vagas_total, cor: p.vagas_total>0?'var(--gold)':'var(--text3)' },
+      { label:'por QP',       val: p.vagas_qp,    cor:'var(--green)' },
+      { label:'por Sobra',    val: p.vagas_sobra, cor:'var(--blue)'  },
+      { label:'Total votos',  val: fmt(p.total_votos), cor:'var(--text2)' },
+    ];
+
+    const linhasCands = cands.map((cd, ci) => {
+      const badgeCls = cd.status==='ELEITO'&&cd.eleito_por==='QP' ? 'badge-eleito'
+                     : cd.status==='ELEITO' ? 'badge-sobra'
+                     : cd.status==='SUPLENTE' ? 'badge-suplente' : 'badge-nao';
+      const sexoIco = cd.sexo==='F'
+        ? '<span style="color:#F472B6;font-weight:700;font-size:13px">♀</span>'
+        : cd.sexo==='M' ? '<span style="color:#60A5FA;font-weight:700;font-size:13px">♂</span>'
+        : '<span style="color:var(--red);font-size:11px" title="Sexo não informado">?</span>';
+      const rowBg = cd.status==='ELEITO' ? 'rgba(16,185,129,.04)'
+                  : cd.status==='SUPLENTE' ? 'rgba(245,158,11,.04)' : '';
+      const cidxPP = _findIdx(cd.nome, cd.partido, cd.votos, cd.posicao);
+      const btnPP  = cidxPP >= 0
+        ? `<button class="btn btn-ghost btn-sm btn-icon" title="Editar ${cd.nome}"
+             style="opacity:.7" onclick="abrirEditarCand('${p.sigla}',${cidxPP})">✏</button>`
+        : `<button class="btn btn-ghost btn-sm btn-icon" style="opacity:.2;cursor:default">✏</button>`;
+      return `<tr style="background:${rowBg}">
+        <td style="color:var(--text3);padding-left:20px">${ci+1}º</td>
+        <td style="font-weight:${cd.status==='ELEITO'?'600':'400'}">${cd.nome}</td>
+        <td style="text-align:center">${sexoIco}</td>
+        <td>${fmt(cd.votos)}</td>
+        <td><span class="badge ${badgeCls}" style="font-size:10px">${cd.status}</span></td>
+        <td style="font-size:11px;color:var(--text3)">${cd.eleito_por||''}</td>
+        <td>${btnPP}</td>
+      </tr>`;
+    }).join('');
+
+    return `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:14px;overflow:hidden">
+      <!-- Cabeçalho do partido -->
+      <div style="padding:14px 16px;border-bottom:1px solid var(--border);border-left:4px solid ${cor};display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:16px;font-weight:800;color:${cor}">${p.sigla}</span>
+          <span style="font-size:12px;color:var(--text2)">${tot} candidato${tot!==1?'s':''}</span>
+          ${cotaBadge}
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          ${statusCards.map(s=>`
+            <div style="background:var(--surface2);border-radius:7px;padding:4px 10px;text-align:center;min-width:64px">
+              <div style="font-size:14px;font-weight:700;color:${s.cor}">${s.val}</div>
+              <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.3px">${s.label}</div>
+            </div>`).join('')}
+        </div>
+      </div>
+
+      <!-- Barra de gênero -->
+      <div style="padding:10px 16px;background:var(--surface2);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px">
+        <span style="font-size:11px;color:var(--text3);min-width:80px">Composição:</span>
+        <div style="flex:1;height:8px;background:var(--border);border-radius:4px;overflow:hidden;display:flex">
+          <div style="background:#3B82F6;width:${pctM}%;transition:width .4s" title="♂ ${nM} (${pctM}%)"></div>
+          <div style="background:#F472B6;width:${pctF}%;transition:width .4s" title="♀ ${nF} (${pctF}%)"></div>
+        </div>
+        <span style="font-size:11px;color:#60A5FA;white-space:nowrap">♂ ${nM} (${pctM}%)</span>
+        <span style="font-size:11px;color:#F472B6;white-space:nowrap">♀ ${nF} (${pctF}%)</span>
+        ${tot>=3 ? `<span style="font-size:10px;color:${cotaViol?'var(--red)':'var(--text3)'};white-space:nowrap">
+          mín. 30%: ${!cotaViol?'✓ OK':'⚠ viola'}
+        </span>` : ''}
+      </div>
+
+      <!-- Tabela de candidatos -->
+      <table class="result-table" style="margin:0">
+        <thead><tr style="background:var(--surface2)">
+          <th style="padding-left:20px">#</th>
+          <th>Candidato</th>
+          <th style="text-align:center">Sexo</th>
+          <th>Votos</th>
+          <th>Status</th>
+          <th>Eleito por</th>
+          <th></th>
+        </tr></thead>
+        <tbody>${linhasCands}</tbody>
+      </table>
+    </div>`;
+  }).join('');
+
+  // Log
+  gerarLog(r);
+}
+
+function gerarLog(r) {
+  const L = [];
+  const linha = '═'.repeat(64);
+  L.push(linha);
+  L.push(`  SIMULADOR ELEITORAL PROPORCIONAL — ESPÍRITO SANTO`);
+  L.push(`  Cargo: ${document.getElementById('cargo').value.toUpperCase()}`);
+  L.push(linha + '\n');
+  L.push('ETAPA 1 — APURAÇÃO');
+  L.push(`  Eleitores aptos  : ${fmt(r.eleitores)}`);
+  L.push(`  Comparecimento   : ${fmt(r.comparecimento)}`);
+  L.push(`  Abstenção        : ${fmt(r.abstencao)}`);
+  L.push(`  Votos brancos    : ${fmt(r.total_brancos)}  (excluídos)`);
+  L.push(`  Votos nulos      : ${fmt(r.total_nulos)}  (excluídos)`);
+  L.push(`  Votos válidos    : ${fmt(r.total_validos)}\n`);
+  L.push('ETAPA 2 — QUOCIENTE ELEITORAL');
+  L.push(`  QE = ${fmt(r.total_validos)} ÷ ${r.vagas} = ${r.qe_raw}`);
+  L.push(`  QE arredondado   : ${fmt(r.qe)}`);
+  L.push(`  80% QE (part.)   : ${fmt(r.minimo_80_qe)}  — partido participa das sobras`);
+  L.push(`  20% QE (sobras)  : ${fmt(r.minimo_20_qe||0)}  — candidato pode levar vaga de sobra (Lei 14.211/2021)`);
+  L.push(`  10% QE (mín ind) : ${fmt(r.minimo_individual)}  — mínimo para ser eleito pelo QP\n`);
+  L.push('ETAPA 3 — QUOCIENTE PARTIDÁRIO');
+  r.partidos.sort((a,b)=>b.total_votos-a.total_votos).forEach(p => {
+    L.push(`  ${p.sigla.padEnd(10)} ${fmt(p.total_votos).padStart(12)}  ${p.atingiu_qe?'✓':'✗'} QE  vagas_qp=${p.vagas_qp}`);
+  });
+  L.push(`\n  Vagas por QP : ${r.vagas_qp_total}`);
+  L.push(`  Vagas sobras : ${r.vagas_sobras}\n`);
+  L.push('ETAPA 4 — SOBRAS (D\'Hondt) — Regra 80/20 Lei 14.211/2021');
+  L.push(`  Elegíveis (>= 80% QE): ${r.partidos.filter(p=>p.atingiu_80_qe).map(p=>p.sigla).join(', ')||'nenhum'}`);
+  L.push(`  Com candidato >= 20% QE: ${r.partidos.filter(p=>p.atingiu_80_qe&&p.candidatos.some(c=>c.votos>=(r.minimo_20_qe||0))).map(p=>p.sigla).join(', ')||'nenhum'}`);
+  r.partidos.filter(p=>p.vagas_sobra>0).forEach(p => {
+    const med = (p.total_votos/(p.vagas_qp+1)).toFixed(0);
+    L.push(`  ${p.sigla}: +${p.vagas_sobra} vaga(s) por média (média=${Number(med).toLocaleString('pt-BR')})`);
+  });
+  L.push(`\nRESULTADO — ${r.total_eleitos} ELEITOS\n`);
+  r.candidatos.filter(c=>c.status==='ELEITO').sort((a,b)=>b.votos-a.votos)
+    .forEach((c,i) => {
+      L.push(`  ${String(i+1).padStart(2)}. ${c.nome.padEnd(36)} (${c.partido})  ${fmt(c.votos)}  [${c.eleito_por}]`);
+    });
+  L.push('\n' + linha);
+  document.getElementById('log-calculo').textContent = L.join('\n');
+}
+
+// ─── Salvar ────────────────────────────────────────────────────────────────────
+async function salvar() {
+  const nome = document.getElementById('sim-nome').value.trim() || 'Sem título';
+  const payload = {
+    id: simId,
+    nome,
+    cargo: document.getElementById('cargo').value,
+    eleitores: parseInt(document.getElementById('eleitores').value) || 2921506,
+    votos_brancos: parseInt(document.getElementById('brancos').value) || 0,
+    votos_nulos:   parseInt(document.getElementById('nulos').value) || 0,
+    dados_partidos: dados,
+    resultado
+  };
+  const status = document.getElementById('save-status');
+  status.textContent = 'Salvando…'; status.className = 'save-status';
+  try {
+    const r = await fetch('/api/simulacao/salvar', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const d = await r.json();
+    if (d.ok) {
+      simId = d.id;
+      history.replaceState(null,'',`/simulacao/${simId}`);
+      status.textContent = '✓ Salvo'; status.className = 'save-status saved';
+      setTimeout(()=>{ status.textContent=''; status.className='save-status'; }, 3000);
+    }
+  } catch { status.textContent = 'Erro ao salvar'; }
+}
+
+// ─── Tabs ─────────────────────────────────────────────────────────────────────
+function showTab(name, btn) {
+  document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  if (btn) btn.classList.add('active');
+}
+
+// ─── Toast ────────────────────────────────────────────────────────────────────
+function toast(msg, tipo) {
+  const t = document.createElement('div');
+  t.className = `toast toast-${tipo}`;
+  t.innerHTML = `<span>${tipo==='ok'?'✓':'✕'}</span> ${msg}`;
+  document.body.appendChild(t);
+  setTimeout(()=>t.remove(), 3500);
+}
+
+
+
+// Auto-save com Ctrl+S
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey||e.metaKey) && e.key==='s') { e.preventDefault(); salvar(); }
+});
+
+// Fechar toasts automático
+setTimeout(()=>document.querySelectorAll('.toast').forEach(t=>t.remove()), 4000);
+</script>
+{% endblock %}

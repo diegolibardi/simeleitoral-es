@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block title %}Admin — EleitOS{% endblock %}
+
+{% block content %}
+<div style="max-width:1100px;margin:0 auto;padding:24px 16px">
+
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:28px">
+    <div>
+      <h1 style="font-size:20px;font-weight:800;color:var(--text1);margin:0 0 4px">⚙ Painel Admin</h1>
+      <p style="color:var(--text3);font-size:13px;margin:0">Gestão de usuários, assinaturas e receita</p>
+    </div>
+    <a href="{{ url_for('dashboard') }}" class="btn btn-ghost btn-sm">← Dashboard</a>
+  </div>
+
+  {# KPIs #}
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:12px;margin-bottom:24px">
+    {% set cards = [
+      ("💰","MRR","R$ " ~ "{:,.2f}".format(metricas.mrr|float).replace(",","X").replace(".",",").replace("X","."), "#F59E0B"),
+      ("📈","Receita no mês","R$ " ~ "{:,.2f}".format(metricas.receita_mensal|float).replace(",","X").replace(".",",").replace("X","."), "#34D399"),
+      ("🏦","Receita total","R$ " ~ "{:,.2f}".format(metricas.receita_total|float).replace(",","X").replace(".",",").replace("X","."), "#60A5FA"),
+      ("👥","Usuários", metricas.total_usuarios, "#A78BFA"),
+      ("📅","Mensais ativos", metricas.mensais_ativos, "#60A5FA"),
+      ("⚡","Vitalícios", metricas.vitalicios_ativos, "#F59E0B"),
+      ("📊","Simulações", metricas.total_sims, "#34D399"),
+    ] %}
+    {% for icon, label, valor, cor in cards %}
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 18px">
+      <div style="font-size:18px;margin-bottom:6px">{{ icon }}</div>
+      <div style="font-size:20px;font-weight:800;color:{{ cor }}">{{ valor }}</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:.4px">{{ label }}</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {# Últimos pagamentos #}
+  {% if ultimos_pagamentos %}
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden;margin-bottom:20px">
+    <div style="padding:14px 20px;border-bottom:1px solid var(--border)">
+      <span style="font-size:14px;font-weight:600;color:var(--text1)">💳 Últimos Pagamentos</span>
+    </div>
+    <div style="overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse;min-width:600px">
+      <thead><tr style="background:var(--surface2)">
+        {% for col in ["Data","Usuário","Plano","Valor","Status"] %}
+        <th style="padding:9px 14px;text-align:left;font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.4px">{{ col }}</th>
+        {% endfor %}
+      </tr></thead>
+      <tbody>
+        {% for p in ultimos_pagamentos %}
+        <tr style="border-top:1px solid var(--border)">
+          <td style="padding:9px 14px;font-size:12px;color:var(--text3)">{{ p.criado_em[:10] }}</td>
+          <td style="padding:9px 14px">
+            <div style="font-size:13px;font-weight:600;color:var(--text1)">{{ p.nome }}</div>
+            <div style="font-size:11px;color:var(--text3)">{{ p.email }}</div>
+          </td>
+          <td style="padding:9px 14px">
+            <span style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:8px;
+              {% if p.plano=='vitalicio' %}background:rgba(245,158,11,.15);color:#F59E0B
+              {% else %}background:rgba(96,165,250,.15);color:#60A5FA{% endif %}">
+              {{ 'VITALÍCIO' if p.plano=='vitalicio' else 'MENSAL' }}
+            </span>
+          </td>
+          <td style="padding:9px 14px;font-size:13px;font-weight:700;color:var(--text1)">
+            R$ {{ '%.2f'|format(p.valor)|replace('.', ',') }}
+          </td>
+          <td style="padding:9px 14px">
+            <span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;
+              {% if p.status=='approved' %}background:rgba(16,185,129,.15);color:#34D399
+              {% else %}background:rgba(239,68,68,.15);color:#F87171{% endif %}">
+              {{ 'APROVADO' if p.status=='approved' else p.status|upper }}
+            </span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {# Tabela de usuários #}
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden">
+    <div style="padding:14px 20px;border-bottom:1px solid var(--border)">
+      <span style="font-size:14px;font-weight:600;color:var(--text1)">👥 Usuários ({{ usuarios|length }})</span>
+    </div>
+    <div style="overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse;min-width:750px">
+      <thead><tr style="background:var(--surface2)">
+        {% for col in ["#","Nome / E-mail","Papel","Assinatura","Sims","Cadastro","Ações"] %}
+        <th style="padding:9px 14px;text-align:left;font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.4px">{{ col }}</th>
+        {% endfor %}
+      </tr></thead>
+      <tbody>
+      {% for u in usuarios %}
+      <tr style="border-top:1px solid var(--border)">
+        <td style="padding:10px 14px;font-size:12px;color:var(--text3)">{{ u.id }}</td>
+        <td style="padding:10px 14px">
+          <div style="font-size:13px;font-weight:600;color:var(--text1)">{{ u.nome }}</div>
+          <div style="font-size:11px;color:var(--text3)">{{ u.email }}</div>
+        </td>
+        <td style="padding:10px 14px">
+          {% if u.papel=='admin' %}
+          <span style="background:rgba(245,158,11,.15);color:#F59E0B;padding:3px 8px;border-radius:8px;font-size:10px;font-weight:700">ADMIN</span>
+          {% else %}
+          <span style="background:rgba(100,116,139,.15);color:#94A3B8;padding:3px 8px;border-radius:8px;font-size:10px;font-weight:700">USUÁRIO</span>
+          {% endif %}
+        </td>
+        <td style="padding:10px 14px">
+          {% if u.papel=='admin' %}
+          <span style="font-size:11px;color:var(--text3)">—</span>
+          {% elif u.assinatura_status=='ativa' %}
+          <div>
+            <span style="font-size:11px;font-weight:700;{% if u.plano_ativo=='vitalicio' %}color:#F59E0B{% else %}color:#60A5FA{% endif %}">
+              {{ 'VITALÍCIO' if u.plano_ativo=='vitalicio' else 'MENSAL' }}
+            </span>
+            {% if u.data_expiracao %}
+            <div style="font-size:10px;color:var(--text3)">até {{ u.data_expiracao[:10] }}</div>
+            {% endif %}
+          </div>
+          {% else %}
+          <span style="background:rgba(239,68,68,.12);color:#F87171;padding:2px 7px;border-radius:6px;font-size:10px;font-weight:600">SEM PLANO</span>
+          {% endif %}
+        </td>
+        <td style="padding:10px 14px;font-size:13px;color:var(--text2);text-align:center">{{ u.total_sims }}</td>
+        <td style="padding:10px 14px;font-size:11px;color:var(--text3)">{{ u.criado_em[:10] }}</td>
+        <td style="padding:10px 14px">
+          {% if u.id != session.user_id %}
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            {% if u.assinatura_status != 'ativa' %}
+            <form method="POST" action="{{ url_for('admin_ativar_plano', uid=u.id) }}" style="display:inline">
+              <input type="hidden" name="plano" value="mensal">
+              <button class="btn btn-sm" style="background:rgba(96,165,250,.1);color:#60A5FA;border:1px solid rgba(96,165,250,.3);padding:3px 8px;font-size:10px">+Mensal</button>
+            </form>
+            <form method="POST" action="{{ url_for('admin_ativar_plano', uid=u.id) }}" style="display:inline">
+              <input type="hidden" name="plano" value="vitalicio">
+              <button class="btn btn-sm" style="background:rgba(245,158,11,.1);color:#F59E0B;border:1px solid rgba(245,158,11,.3);padding:3px 8px;font-size:10px">+Vitalício</button>
+            </form>
+            {% else %}
+            <form method="POST" action="{{ url_for('admin_revogar_plano', uid=u.id) }}" style="display:inline"
+                  onsubmit="return confirm('Revogar acesso de {{ u.nome }}?')">
+              <button class="btn btn-sm" style="background:rgba(239,68,68,.1);color:#F87171;border:1px solid rgba(239,68,68,.2);padding:3px 8px;font-size:10px">Revogar</button>
+            </form>
+            {% endif %}
+            <form method="POST" action="{{ url_for('admin_toggle_papel', uid=u.id) }}" style="display:inline">
+              <button class="btn btn-sm btn-ghost" style="padding:3px 8px;font-size:10px">{{ '→ Usuário' if u.papel=='admin' else '→ Admin' }}</button>
+            </form>
+            <form method="POST" action="{{ url_for('admin_excluir_usuario', uid=u.id) }}" style="display:inline"
+                  onsubmit="return confirm('Excluir {{ u.nome }}?')">
+              <button class="btn btn-sm" style="background:rgba(239,68,68,.07);color:#F87171;border:1px solid rgba(239,68,68,.15);padding:3px 8px;font-size:10px">Excluir</button>
+            </form>
+          </div>
+          {% else %}
+          <span style="font-size:11px;color:var(--text3)">(você)</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

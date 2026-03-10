@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>{% block title %}EleitOS{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  {% block head %}{% endblock %}
+</head>
+<body>
+  {% if session.user_id %}
+  <nav class="navbar">
+    <a href="{{ url_for('dashboard') }}" class="nav-brand">
+      <span class="brand-icon">⚡</span>
+      <span class="brand-text">Eleit<span class="brand-state">OS</span></span>
+    </a>
+    <div class="nav-links">
+      <a href="{{ url_for('dashboard') }}" class="nav-link {% if request.endpoint=='dashboard' %}active{% endif %}">
+        Dashboard
+      </a>
+      <a href="{{ url_for('nova_simulacao') }}" class="nav-link {% if request.endpoint=='nova_simulacao' %}active{% endif %}">
+        Nova Simulação
+      </a>
+      {% if session.papel == 'admin' %}
+      <a href="{{ url_for('admin') }}" class="nav-link nav-admin {% if request.endpoint=='admin' %}active{% endif %}">
+        Admin
+      </a>
+      {% endif %}
+    </div>
+    <div class="nav-user">
+      <span class="user-badge">{{ session.nome[0].upper() }}</span>
+      <div class="user-menu">
+        <span class="user-name">{{ session.nome }}</span>
+        <div class="user-dropdown">
+          <a href="{{ url_for('perfil') }}">Meu perfil</a>
+          <a href="{{ url_for('minha_assinatura') }}">Minha assinatura</a>
+          <a href="{{ url_for('logout') }}" class="logout-link">Sair</a>
+        </div>
+      </div>
+    </div>
+  </nav>
+  {% endif %}
+
+  <main class="main-content {% if not session.user_id %}auth-layout{% endif %}">
+    {% with msgs = get_flashed_messages(with_categories=True) %}
+      {% for cat, msg in msgs %}
+      <div class="toast toast-{{ cat }}">
+        <span>{{ '✓' if cat=='ok' else '✕' }}</span> {{ msg }}
+      </div>
+      {% endfor %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>
