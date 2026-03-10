@@ -37,7 +37,7 @@
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Eleitores aptos</label>
-            <input type="number" id="eleitores" class="form-control" value="2921506"
+            <input type="number" id="eleitores" class="form-control" value="2999642"
                    oninput="atualizarTotais(); agendarCalculo()">
           </div>
           <div class="form-group">
@@ -45,7 +45,7 @@
               Votos Brancos
               <span style="color:var(--amber);font-size:9px;margin-left:4px">∉ QE</span>
             </label>
-            <input type="number" id="brancos" class="form-control" value="0" min="0"
+            <input type="number" id="brancos" class="form-control" value="101146" min="0"
                    oninput="atualizarTotais(); agendarCalculo()">
           </div>
         </div>
@@ -55,7 +55,7 @@
               Votos Nulos
               <span style="color:var(--amber);font-size:9px;margin-left:4px">∉ QE</span>
             </label>
-            <input type="number" id="nulos" class="form-control" value="0" min="0"
+            <input type="number" id="nulos" class="form-control" value="129835" min="0"
                    oninput="atualizarTotais(); agendarCalculo()">
           </div>
           <div class="form-group">
@@ -875,20 +875,24 @@ function exportarPDF() {
 // ─── Debounce — cálculo automático ───────────────────────────────────────────
 let _calcTimer = null;
 
+let _saveTimer = null;
 function agendarCalculo() {
   clearTimeout(_calcTimer);
   if (Object.keys(dados).length === 0) return;
   const status = document.getElementById('calc-status');
   if (status) { status.style.display = 'inline'; status.textContent = '⏳ calculando…'; }
   _calcTimer = setTimeout(calcular, 800);
+  // Auto-save 2 segundos após cada alteração
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(salvar, 2000);
 }
 
 async function calcular() {
   if (Object.keys(dados).length === 0) return;
   const payload = {
     cargo:        document.getElementById('cargo').value,
-    eleitores:    parseInt(document.getElementById('eleitores').value) || 2921506,
-    votos_brancos:parseInt(document.getElementById('brancos').value) || 0,
+    eleitores:    parseInt(document.getElementById('eleitores').value) || 2999642,
+    votos_brancos:parseInt(document.getElementById('brancos').value) || 101146,
     votos_nulos:  parseInt(document.getElementById('nulos').value) || 0,
     dados_partidos: dados
   };
@@ -1297,8 +1301,8 @@ async function salvar() {
     id: simId,
     nome,
     cargo: document.getElementById('cargo').value,
-    eleitores: parseInt(document.getElementById('eleitores').value) || 2921506,
-    votos_brancos: parseInt(document.getElementById('brancos').value) || 0,
+    eleitores: parseInt(document.getElementById('eleitores').value) || 2999642,
+    votos_brancos: parseInt(document.getElementById('brancos').value) || 101146,
     votos_nulos:   parseInt(document.getElementById('nulos').value) || 0,
     dados_partidos: dados,
     resultado
